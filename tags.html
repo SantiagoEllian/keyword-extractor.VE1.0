@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    .chatInput {
+      display: inline-block;
+      overflow: hidden;
+      resize: vertical;
+      text-align: justify;
+      padding: 15px 10px 10px 15px;
+      border: 2px inset #525252;
+      min-height: 100px;
+      line-height: 20px;
+      box-sizing: border-box;
+    }
+    .bodyArea{
+      display: flex;
+      width: auto;
+      margin: 40px;
+    }
+    .presentationArea{
+      width: auto;
+    }
+    .datagridArea{
+      background-color: beige;
+      width: auto;
+    }
+    table{
+      border-collapse: collapse;
+    }
+    .gridCell{
+      background-color: rgb(204, 204, 204);
+      border: 2px solid rgb(36, 36, 36);  
+      padding: 8px;
+      text-align: center;
+      user-select: none;
+    }
+    .gridHeader{
+      background-color: rgb(182, 175, 189);
+      border: 2px solid rgb(36, 36, 36);
+      text-align: center;
+      font-weight: bold;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="tag-container"></div>
+    <div class="input-container">
+      <input placeholder="Palavras-chave" id="tagInput">
+      <div class="tag-container" id="tag-suggestion" style="display: flex; flex-direction: row;">
+      </div>
+    </div>
+  </div>
+  <div>
+    <button onclick="displayResults()">PROCESSAR</button>
+  </div>
+  <div class="bodyArea">
+    <div id="inputArea" class="presentationArea">
+      <span id="chat" class="chatInput" role="textbox" contenteditable></span>
+    </div>
+  </div>
+  <div class="bodyArea">
+    <div id="outputArea" class="datagridArea">
+
+      <table id="outputTable">
+        <thead id="outputTableHeader">
+        </thead>
+
+        <tbody id="outputTableBody">
+        </tbody>
+      </table>
+
+    </div>
+  </div>
+
+  <script>
+    const tagContainer = document.querySelector('.tag-container');
+    const tagInput = document.querySelector('.input-container input');    
+    const suggestionDiv = document.getElementById("tag-suggestion");  
+    const chat = document.getElementById("chat");
+    const originalMessageLabel = "Mensagem Original";
+    const nullFieldString = "NULL";
+    const clickEvents = ["data-item", "data-label", "data-tag"];
+
+    var searchTags = ['Sender', 'Date', 'Time'];
+    var splittedTags = new Object();
+    const defaultTags = ['Sender', 'Date', 'Time'];
+
+    //Delete all active tags // Currently no implementation needed
+    function resetTag(){
+      document.querySelectorAll('.tag').forEach(function(tag){
+        tag.parentElement.removeChild(tag);
+      })
+    }
+
+    //Create elements for adding tags to container
+    function addTag(label){
+      const div = document.createElement('div');
+      div.setAttribute('class', 'tag');
+      const span = document.createElement('span');
+      span.innerText = label
+      div.setAttribute('data-tag', label);
+
+      div.appendChild(span);
+
+      if(!searchTags.includes(label)){
+        searchTags.push(label);
+      }
+
+      return div;
+    }
+
+    //Add or remove close button for tags, for suggestion-tab transition
+    function switchTagCloseBtn(tagDiv, add=true){
+      if(add){
+        const closeBtn = document.createElement('i');
+        closeBtn.innerHTML = "x";
+        closeBtn.setAttribute('data-item', tagDiv.innerText);
+        tagDiv.appendChild(closeBtn);
+      }
+      else{
+        tagDiv.removeChild(tagDiv.querySelector("i"));
+      }
+      return tagDiv;
+    }
+
+    //Modify a tag to be shown as suggestion; change div and remove close button
+    function displaySuggestionTag(tag){
+      tag = switchTagCloseBtn(tag, false);
+      suggestionDiv.appendChild(tag);
+    }
+    
+    //Load all default tags from array
+    function loadTags(){
+      searchTags.slice().reverse().forEach(function(tag){
+        let inputTag = addTag(tag);
+        inputTag = switchTagCloseBtn(inputTag);
+        tagContainer.appendChild(inputTag);
+      })
+    }
+
+    //EventListener for new tag input
+    tagInput.addEventListener('keyup', function(e){
+      if (e.key == "Enter" && tagInput.value!=''){
+        const tag = addTag(tagInput.value);
+        tagContainer.appendChild(tag);
+        tagInput.value = '';
+      }
+    })
+
+    //Click events:
+      //<i> => Remove tags from search; add to suggestion if it is default
+      //<suggestionDiv> => Move tag onto search field
+    document.addEventListener("click", function(e){
+      if(
+        e.target.parentElement == suggestionDiv ||
+        e.target.parentElement.parentElement == suggestionDiv){
+          let isDiv = e.target.getAttribute("data-tag");
+          tagContainer.appendChild(
+          switchTagCloseBtn(
+            isDiv ? e.target : e.target.parentElement));
+          searchTags.push(isDiv ?? e.target.innerText);
+      }
+      else if(e.target.tagName == "I"){
+        let val = e.target.getAttribute("data-item");
+        let index = searchTags.indexOf(val);
+        searchTags = [
+          ...searchTags.slice(0, index),
+          ...searchTags.slice(index + 1)];
+
+        if(defaultTags.includes(val)){
+          displaySuggestionTag(e.target.parentElement);
+        }
+        else{
+          tagContainer.removeChild(e.target.parentElement);
+        }
+      }
+    })
+    
+    loadTags();
+
+///////--KEYWORD TAGGING MODULE-->>--DATA COLLECTION MODULE--///////
+
+    //Convert pt-BR weekdays to their ocurrence date in the last week
+      //Chat input on current application changes from dates to weekdays
+      //when messages were sent in the last 6 days
+    function lastWeekday(weekday){
+      const weekdays = [
+          'Domingo',      //0
+          'Segunda-feira',//1
+          'Terça-feira',  //2
+          'Quarta-feira', //3
+          'Quinta-feira', //4
+          'Sexta-feira',  //5
+          'Sábado'        //6
+      ];
+
+      //Define day stamp between current weekday and the message one
+      let today = new Date();
+      let todaysWeekday = today.getDay();
+      let targetWeekday = weekdays.indexOf(weekday);
+      let dayStamp = todaysWeekday - targetWeekday;
+
+      //Default-written dates are returned as-is
+      if(targetWeekday == -1){
+          return weekday;
+      } 
+      else if(dayStamp <= 0){
+          dayStamp += 7;
+      }
+
+      //Returns LocaleDateStrig of last occurrence for targetWeekday
+      return new Date(
+        today.getTime() - (dayStamp * 864e5)).toLocaleDateString('pt-BR');
+    }
+
+    //Return yesterday if 'Ontem' //Calculate date if any other value
+    function matchDay(weekday){
+      if(weekday == "Ontem"){
+          return new Date(Date.now() - 864e5).toLocaleDateString('pt-BR');
+      }
+      return lastWeekday(weekday);
+    }
+
+    //Regex search of sender, date and time of message
+    function getDefaultChatData(message, fields, nullString = nullFieldString){
+      const messageSenderPatt = /\] (\b[A-Za-z ]+\b)/; //] Sender\n"
+      const messageDatetimePatt1 = /\[(.*?)\s(\d{1,2}:\d{2})\]/; //[WEEKDAY hh:mm]
+      const messageDatetimePatt2 = /\[(\d{1,2}:\d{2})\]/; //[hh:mm]
+
+      let defaultFields = new Object()
+
+      let date, hour;
+      if (messageDatetimePatt1.test(message)){
+        let result = message.match(messageDatetimePatt1);
+        [date, hour] = [matchDay(result[1]), result[2]]
+      }
+      else if (messageDatetimePatt2.test(message)){
+        //No date or weekday means the message was sent the day it was copied
+        [date, hour] = [
+          new Date().toLocaleDateString('pt-BR'),
+          message.match(messageDatetimePatt2)[1]]
+      }
+      else{
+        [date, hour] = [nullString, nullString];
+      }
+
+      for(field of fields){
+        switch(field){
+          case "Sender": //
+            defaultFields[field] = message.match(
+              messageSenderPatt)[1] ?? nullString;
+              break;
+          case "Date":
+            defaultFields[field] = date;
+            break;
+          case "Time":
+            defaultFields[field] = hour;
+            break;
+        }
+      }
+
+      return defaultFields;
+    }
+    
+    //Regex lookup for "fieldName: value\n"
+      //Whitespaces are only considered inside the value
+      //Value can be any character besides linebreaks (\n)
+    function applyRegex(message, field, nullString = nullFieldString){
+      //Avoid looking for fields not written by the user
+      if(!defaultTags.includes(field)){
+        let regex = new RegExp(`${field}\\s*:\\s*(.+)`, 'i');
+        let match = message.match(regex);
+        if(match && match[1]){
+          return  match[1].trim();
+        }
+      }
+      return nullString
+    }
+
+    //Pre-processing of inserted search tags into searching-regex pattern
+      //Identifies multiple tags separated by "/"
+    function getTags(message, searchTags, nullString = nullFieldString){
+      let messageFields = new Object();
+
+      for(tag of searchTags){
+        if(tag.indexOf("/") > 0){
+          var multiField = tag.split("/")
+          multiField.push(tag);
+
+          messageFields[tag] = [...new Set(multiField.map(
+            t => applyRegex(message, t)
+            ).filter(
+              f => f !== nullString && f !== undefined))
+          ].join("/") || nullString;
+        }
+        else{
+          messageFields[tag] = applyRegex(message, tag);
+        }
+      }
+
+      return messageFields;
+    }
+
+    //Find individual messages starting indexes inside the overall text
+    function searchSplittingIndexes(text) {
+      //Regex for message header, which is [dd/mm/yyyy hh:mm] || [weekday hh:mm]
+      const regex = /\[.*?\]/g;
+      let matches = [...text.matchAll(regex)];
+
+      return matches.map(match => match.index);
+    }
+
+    //Divide general chat text into individual messages
+    function splitMessages(text){
+      let indices = searchSplittingIndexes(text);
+      let messages = [];
+
+      for(i = 0; i<indices.length; i++){
+        messages.push(text.slice([indices[i]], indices[i+1]));}
+      return messages;
+    }
+
+    //Mention messages squeeze the original message into a single line of text
+      //If any line has too many colons, it means all the fields were written
+      //onto the same line, meaning a high probability it is a mention
+    //4 is the treshold for 1 is normal, and 2 or 3 could have been an accident
+    function isMentionMessage(message){
+      var rows = message.split("\n").filter(nonEmpty => nonEmpty !== "");
+      for(row of rows){
+        if((row.match(/:/g) || []).length >= 4){
+          return true;
+          break;
+        }
+      }
+      return false;
+    }
+
+    //Submit function
+    function scrapAndExtract(){
+      //Retrieve messages into array
+      const messages = splitMessages(chat.innerText);
+      //Filter default (sender, date & time) and non-default (other) tags
+      const defaultTagsActive = searchTags.filter(
+        dtag => defaultTags.includes(dtag));
+      const nonDefaultTagsActive = searchTags.filter(
+        ndtag => !defaultTags.includes(ndtag));
+
+      //Create a new object for each message
+        //Save original message; Assign default and non-default search results
+      let extractedData = [];
+      for(message of messages){
+        let messageData = new Object();
+
+        messageData[originalMessageLabel] = message;
+
+        var chatData = getDefaultChatData(message, defaultTagsActive);
+        
+        let tagsData = getTags(
+          isMentionMessage(message) ? "" : message,
+          nonDefaultTagsActive);
+        
+        Object.assign(messageData, chatData, tagsData);
+
+        extractedData.push(messageData);
+      }
+
+      return extractedData;
+    }
+
+///////--DATA COLLECTION MODULE-->>--DATA PRESENTATION MODULE--///////
+
+    //Clear datagrid before new data insertion
+    function clearTable(grid){
+      while(grid.firstChild){
+        grid.removeChild(grid.firstChild);
+      }
+    }
+
+    function buildTableHeader(
+      tableHeader = document.getElementById("outputTableHeader"),
+      headingFields = [originalMessageLabel].concat(searchTags),
+      clear = true){
+        if(clear){
+          clearTable(tableHeader);
+        }
+
+        let header = tableHeader.insertRow(-1);
+
+        for(heading of headingFields){
+          var headingCell = header.insertCell(-1);
+          headingCell.setAttribute("class", "gridHeader");
+          headingCell.innerHTML = heading;
+          headingCell.id = `headerCol_${headingFields.indexOf(heading)}`;
+        }
+    }
+
+    function buildTableBody(
+      dataSet = scrapAndExtract(),
+      body = document.getElementById("outputTableBody"),
+      clear = true){
+
+      let originalMessageWidth = Math.max((100/(searchTags.length + 1)), 15);
+      let fixedWidth = (100 - originalMessageWidth)/(searchTags.length + 1);
+
+      if(clear){
+        clearTable(body);
+      }
+
+      for(var r=0; r<dataSet.length; r++){ //Loop messages
+        let row = body.insertRow(-1);
+        row.id = `tbodyRow_${r}`;
+
+        for(attr of Object.keys(dataSet[r])){ //Loop message tags
+          var cell = row.insertCell(-1);
+          cell.setAttribute("class", "gridCell");
+          cell.id = `tbodyRow_${r}_Col_${searchTags.indexOf(attr) + 1}`;
+
+          cell.setAttribute(
+            "width",
+            attr == originalMessageLabel ? `${originalMessageWidth}%` : `${fixedWidth}%`)
+          cell.innerText = `${dataSet[r][attr]}`;
+        }
+      }
+    }
+
+    function displayResults(){
+      buildTableHeader();
+      buildTableBody();
+    }
+  </script>
+</body>
+</html>
